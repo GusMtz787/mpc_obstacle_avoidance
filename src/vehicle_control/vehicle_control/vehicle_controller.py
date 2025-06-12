@@ -5,7 +5,7 @@ from geometry_msgs.msg import Twist
 class SimpleDriver(Node):
     def __init__(self):
         super().__init__('simple_driver')
-        self.cmd_pub = self.create_publisher(Twist, '/model/vehicle_blue/cmd_vel', 10)
+        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.timer = self.create_timer(0.5, self.move_forward)
 
     def move_forward(self):

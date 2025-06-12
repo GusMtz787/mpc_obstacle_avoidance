@@ -7,7 +7,7 @@ def generate_launch_description():
             cmd=[
                 'ros2', 'run', 'ros_gz_bridge', 'parameter_bridge',
                 '/lidar@sensor_msgs/msg/LaserScan@ignition.msgs.LaserScan',
-                '/model/vehicle_blue/cmd_vel@geometry_msgs/msg/Twist@ignition.msgs.Twist'
+                '/cmd_vel@geometry_msgs/msg/Twist@ignition.msgs.Twist'
             ],
             output='screen'
         )
