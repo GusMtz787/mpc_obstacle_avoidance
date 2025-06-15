@@ -17,6 +17,7 @@ setup(
         ('share/vehicle_control/launch', ['launch/lidar_listener.launch.py']),
         ('share/vehicle_control/launch', ['launch/vehicle_sim.launch.py']),        
         ('share/vehicle_control/launch', ['launch/mpc_controller.launch.py']),        
+        ('share/vehicle_control/launch', ['launch/casadi_mpc_controller.launch.py']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -30,6 +31,7 @@ setup(
             'vehicle_controller = vehicle_control.vehicle_controller:main',
             'lidar_listener = vehicle_control.lidar_listener:main',
             'mpc_controller = vehicle_control.mpc_controller:main',
+            'casadi_mpc_controller = vehicle_control.casadi_mpc_controller:main',
         ],
     },
 )

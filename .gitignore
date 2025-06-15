@@ -1,4 +1,4 @@
-# ROS 2 build artifacts
+# ROS 2 build artifacts and vscode artifacts
 build/
 install/
 log/

@@ -1,15 +1,18 @@
 import rclpy
+import numpy as np
+import cvxpy as cp
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
-import numpy as np
-import cvxpy as cp
+from sensor_msgs.msg import PointCloud2
+import sensor_msgs_py.point_cloud2 as pc2
 
 class MPCController(Node):
     def __init__(self):
         super().__init__('mpc_controller')
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.odom_sub = self.create_subscription(Odometry, '/model/vehicle_blue/odometry', self.odom_callback, 20)
+        self.pointCloud_sub = self.create_subscription(PointCloud2, '/obstacle_points', self.pointCloud_callback, 10)
         self.timer = self.create_timer(0.1, self.control_loop)
 
         self.current_state = [0.0, 0.0, 0.0]  # Initial state: [x, y, theta]
@@ -17,11 +20,7 @@ class MPCController(Node):
         # Waypoints to follow (simple path)
         self.waypoints = [
             [0.0, 0.0, 0.0],
-            [1.0, 1.0, 0.0],
-            [2.0, 2.0, 0.0],
-            [3.0, 3.0, 0.0],
-            [4.0, 4.0, 0.0],
-            [5.0, 5.0, 0.0]
+            [7.0, 0.0, 0.0]
         ]
         self.current_wp_idx = 0
 
@@ -76,6 +75,7 @@ class MPCController(Node):
 
         Q = np.diag([1, 2, 0.1]) # State cost matrix
         R = np.diag([0.3, 0.3]) # Control cost matrix
+        Q_pos = np.diag([2, 2])
 
         x = cp.Variable((3, N + 1)) # State variable (x, y, theta) for each time step, cvxpy.Variable creates a variable that will be optimized
         u = cp.Variable((2, N)) # Control input variable (v, omega) for each time step
@@ -102,16 +102,33 @@ class MPCController(Node):
 
         # Loop through the prediction horizon
         # For each time step, we add the cost and constraints
+        obstacle_weight = 0.1
+        epsilon = 0.1
+
         for k in range(N):
-            cost += cp.quad_form(x[:, k] - x_ref, Q) + cp.quad_form(u[:, k], R)
-            #cost += cp.sum_squares(u[:, k] - u[:, k - 1]) * 0.3  # Tune this weight
+            # Tracking cost (only position)
+            cost += cp.quad_form(x[:2, k] - x_ref[:2], Q_pos)
+            cost += cp.quad_form(u[:, k], R)
+            if k > 0:
+                cost += cp.sum_squares(u[:, k] - u[:, k - 1]) * 0.2
+
+            # # Obstacle avoidance penalty
+            # for obs in self.obstacle_points:
+            #     dist_sq = cp.sum_squares(x[:2, k] - obs)
+            #     cost += obstacle_weight / (dist_sq + epsilon)
+
             constraints += [x[:, k + 1] == A @ x[:, k] + B @ u[:, k]]
             constraints += [
-            u[0, k] >= v_min,
-            u[0, k] <= v_max,
-            u[1, k] >= omega_min,
-            u[1, k] <= omega_max
+                u[0, k] >= v_min,
+                u[0, k] <= v_max,
+                u[1, k] >= omega_min,
+                u[1, k] <= omega_max
             ]
+
+        cost += cp.quad_form(x[:2, N] - x_ref[:2], Q_pos)
+
+        prob = cp.Problem(cp.Minimize(cost), constraints)
+        prob.solve()
 
         # Add terminal cost for the last state
         cost += cp.quad_form(x[:, N] - x_ref, Q)
@@ -152,6 +169,12 @@ class MPCController(Node):
         msg.angular.z = float(omega)
         self.cmd_pub.publish(msg)
         self.get_logger().info(f'Sent cmd_vel: v={v:.2f}, omega={omega:.2f}')
+    
+    def pointCloud_callback(self, msg):
+        points = []
+        for p in pc2.read_points(msg, field_names=("x", "y"), skip_nans=True):
+            points.append([p[0], p[1]])
+        self.obstacle_points = np.array(points)
 
 def main(args=None):
     rclpy.init(args=args)
