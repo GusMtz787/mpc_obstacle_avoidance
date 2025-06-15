@@ -117,6 +117,27 @@ class MPCController(Node):
     # It uses the MPC solver to compute the optimal control inputs (linear and angular velocities)
     # and publishes them as a Twist message to the '/cmd_vel' topic.
     def control_loop(self):
+
+        # If the car reaches the goal, stop sending commands
+        # Compute current error to goal
+        dx = self.target_state[0] - self.current_state[0]
+        dy = self.target_state[1] - self.current_state[1]
+        dist_to_goal = np.hypot(dx, dy)
+
+        # We define a tolerance radius in meters
+        goal_tolerance = 0.8
+
+        # Now check if the robot is within the goal tolerance
+        # If the distance to the goal is less than the tolerance, we stop sending commands
+        # and log that the goal has been reached.
+        if dist_to_goal < goal_tolerance:
+            self.get_logger().info('Target position reached, stopping commands.')
+            msg = Twist()
+            msg.linear.x = 0.0
+            msg.angular.z = 0.0
+            self.cmd_pub.publish(msg)
+            return
+
         v, omega = self.solve_mpc(self.current_state, self.target_state)
         msg = Twist()
         msg.linear.x = float(v)
