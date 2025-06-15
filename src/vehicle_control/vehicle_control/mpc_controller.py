@@ -12,8 +12,18 @@ class MPCController(Node):
         self.odom_sub = self.create_subscription(Odometry, '/model/vehicle_blue/odometry', self.odom_callback, 20)
         self.timer = self.create_timer(0.1, self.control_loop)
 
-        self.current_state = [0.0, 0.0, 0.0]  # x, y, theta
-        self.target_state = [5.0, 5.0, 0.0]   # desired x, y, theta
+        self.current_state = [0.0, 0.0, 0.0]  # Initial state: [x, y, theta]
+
+        # Waypoints to follow (simple path)
+        self.waypoints = [
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 2.0, 0.0],
+            [3.0, 3.0, 0.0],
+            [4.0, 4.0, 0.0],
+            [5.0, 5.0, 0.0]
+        ]
+        self.current_wp_idx = 0
 
     def odom_callback(self, msg):
         x = msg.pose.pose.position.x
@@ -64,8 +74,8 @@ class MPCController(Node):
         T = 0.1  # sampling time
         N = 10   # horizon
 
-        Q = np.diag([1, 2, 1]) # State cost matrix
-        R = np.diag([0.7, 0.7]) # Control cost matrix
+        Q = np.diag([1, 2, 0.1]) # State cost matrix
+        R = np.diag([0.3, 0.3]) # Control cost matrix
 
         x = cp.Variable((3, N + 1)) # State variable (x, y, theta) for each time step, cvxpy.Variable creates a variable that will be optimized
         u = cp.Variable((2, N)) # Control input variable (v, omega) for each time step
@@ -120,27 +130,23 @@ class MPCController(Node):
     # and publishes them as a Twist message to the '/cmd_vel' topic.
     def control_loop(self):
 
-        # If the car reaches the goal, stop sending commands
-        # Compute current error to goal
-        difference_x = self.target_state[0] - self.current_state[0]
-        difference_y = self.target_state[1] - self.current_state[1]
-        dist_to_goal = np.hypot(difference_x, difference_y) # this computes the Euclidean distance to the goal
+        x0 = np.array(self.current_state)
+        x_ref = np.array(self.waypoints[self.current_wp_idx])
 
-        # We define a tolerance radius in meters
-        goal_tolerance = 0.8
+        # Advance to next waypoint if close
+        if np.linalg.norm(x0[:2] - x_ref[:2]) < 0.5 and self.current_wp_idx < len(self.waypoints) - 1:
+            self.current_wp_idx += 1
+            x_ref = np.array(self.waypoints[self.current_wp_idx])
 
-        # Now check if the robot is within the goal tolerance
-        # If the distance to the goal is less than the tolerance, we stop sending commands
-        # and log that the goal has been reached.
-        if dist_to_goal < goal_tolerance:
-            self.get_logger().info('Target position reached, stopping commands.')
+        # Stop if we’ve reached the final waypoint
+        if self.current_wp_idx == len(self.waypoints) - 1 and np.linalg.norm(x0[:2] - x_ref[:2]) < 0.3:
             msg = Twist()
-            msg.linear.x = 0.0
-            msg.angular.z = 0.0
-            self.cmd_pub.publish(msg)
+            self.cmd_pub.publish(msg)  # publish zero velocity
+            self.get_logger().info("Goal reached. Stopping.")
             return
 
-        v, omega = self.solve_mpc(self.current_state, self.target_state)
+        v, omega = self.solve_mpc(x0, x_ref)
+
         msg = Twist()
         msg.linear.x = float(v)
         msg.angular.z = float(omega)
