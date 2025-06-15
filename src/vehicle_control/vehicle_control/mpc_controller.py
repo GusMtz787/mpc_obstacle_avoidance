@@ -10,7 +10,7 @@ class MPCController(Node):
         super().__init__('mpc_controller')
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.odom_sub = self.create_subscription(Odometry, '/model/vehicle_blue/odometry', self.odom_callback, 20)
-        self.timer = self.create_timer(0.2, self.control_loop)
+        self.timer = self.create_timer(0.1, self.control_loop)
 
         self.current_state = [0.0, 0.0, 0.0]  # x, y, theta
         self.target_state = [5.0, 5.0, 0.0]   # desired x, y, theta
@@ -61,11 +61,11 @@ class MPCController(Node):
     #
     # The control inputs are also constrained to be within specified limits.
     def solve_mpc(self, x0, x_ref):
-        T = 0.2  # sampling time
-        N = 15   # horizon
+        T = 0.1  # sampling time
+        N = 10   # horizon
 
-        Q = np.diag([1, 1, 1]) # State cost matrix
-        R = np.diag([0.1, 0.1]) # Control cost matrix
+        Q = np.diag([1, 2, 1]) # State cost matrix
+        R = np.diag([0.7, 0.7]) # Control cost matrix
 
         x = cp.Variable((3, N + 1)) # State variable (x, y, theta) for each time step, cvxpy.Variable creates a variable that will be optimized
         u = cp.Variable((2, N)) # Control input variable (v, omega) for each time step
@@ -94,6 +94,7 @@ class MPCController(Node):
         # For each time step, we add the cost and constraints
         for k in range(N):
             cost += cp.quad_form(x[:, k] - x_ref, Q) + cp.quad_form(u[:, k], R)
+            #cost += cp.sum_squares(u[:, k] - u[:, k - 1]) * 0.3  # Tune this weight
             constraints += [x[:, k + 1] == A @ x[:, k] + B @ u[:, k]]
             constraints += [
             u[0, k] >= v_min,
@@ -102,6 +103,7 @@ class MPCController(Node):
             u[1, k] <= omega_max
             ]
 
+        # Add terminal cost for the last state
         cost += cp.quad_form(x[:, N] - x_ref, Q)
 
         prob = cp.Problem(cp.Minimize(cost), constraints)
@@ -120,9 +122,9 @@ class MPCController(Node):
 
         # If the car reaches the goal, stop sending commands
         # Compute current error to goal
-        dx = self.target_state[0] - self.current_state[0]
-        dy = self.target_state[1] - self.current_state[1]
-        dist_to_goal = np.hypot(dx, dy)
+        difference_x = self.target_state[0] - self.current_state[0]
+        difference_y = self.target_state[1] - self.current_state[1]
+        dist_to_goal = np.hypot(difference_x, difference_y) # this computes the Euclidean distance to the goal
 
         # We define a tolerance radius in meters
         goal_tolerance = 0.8
