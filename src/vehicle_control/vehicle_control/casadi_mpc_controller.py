@@ -24,7 +24,7 @@ class CasadiMPCController(Node):
         # Waypoints to follow (simple path)
         self.waypoints = [
             [0.0, 0.0, 0.0],
-            [7.0, 0.0, 0.0]
+            [5.0, 2.0, 0.0]
         ]
         
         self.current_wp_idx = 0
@@ -60,64 +60,140 @@ class CasadiMPCController(Node):
             self.get_logger().info("Goal reached. Stopping.")
             return
 
-        u_opt = self.solve_mpc(x0, x_ref)
+        v, omega = self.solve_mpc(x0, [5.0, 5.0, 0.0])
+
         msg = Twist()
-        msg.linear.x = float(u_opt[0])
-        msg.angular.z = float(u_opt[1])
+        msg.linear.x = float(v)
+        msg.angular.z = float(omega)
         self.cmd_pub.publish(msg)
+        self.get_logger().info(f'Sent cmd_vel: v={v:.2f}, omega={omega:.2f}')
+
 
     def solve_mpc(self, x0, x_ref):
-        T = 0.2
-        N = 15
-        r_safe = 0.6
+        
+        # General MPC setup
+        N = 15  # prediction horizon
+        T = 0.2  # time step
 
-        x = ca.MX.sym('x', 3, N+1)
-        u = ca.MX.sym('u', 2, N)
+        # System variables
+        x = ca.MX.sym('x')
+        y = ca.MX.sym('y')
+        theta = ca.MX.sym('theta')
+        states = ca.vertcat(x, y, theta)
+        n_states = states.size()[0]
 
-        cost = 0
+        # Control variables
+        v = ca.MX.sym('v')
+        omega = ca.MX.sym('omega')
+        controls = ca.vertcat(v, omega)
+        n_controls = controls.size()[0]
+
+        # Define the system dynamics
+        # dx/dt = v * cos(theta)
+        # dy/dt = v * sin(theta)
+        # dtheta/dt = omega
+        dynamics = ca.vertcat(
+            v * ca.cos(theta),
+            v * ca.sin(theta),
+            omega
+        )
+    
+        # Create a CasADi function for the dynamics
+        f = ca.Function('f', [states, controls], [dynamics])
+
+        # Define the optimization variables
+        # These contain the full state trajectory and control inputs
+        # X = [x0, x1, ..., xN], U = [u0, u1, ..., uN-1]
+        # where xi is the state at time step i and ui is the control input at time step i
+        # P is the initial state (x0) but in CasADi format they usually use parameter P for this purpose
+        # We will optimize over the trajectory X and control inputs U
+        X = ca.MX.sym('X', n_states, N+1)
+        U = ca.MX.sym('U', n_controls, N)
+        P = ca.MX.sym('P', n_states + 2)  # x0 and x_ref (but just 2D)
+
+        # Weighting matrices for the cost function
+        Q = ca.diag([2.0, 2.0, 1.0])
+        R = ca.diag([0.1, 0.1])
+
+        # Objective function and constraints
+        # The objective is to minimize the distance to the reference trajectory and the control effort
+        # g will hold the constraints, including the initial condition and dynamics constraints
+        obj = 0
         g = []
-        g.append(x[:, 0] - x0)
+        g.append(X[:, 0] - P[0:3])# initial condition constraint this tells that X[0] = P, where P is the initial state (x0). Bear in mind that g must then yield 0.
 
-        Q = np.diag([2, 2, 0.1])
-        R = np.diag([0.1, 0.1])
-
+        # This is the core of the MPC loop
+        # We iterate over the prediction horizon N
+        # For each step, we compute the cost and the dynamics constraints
+        # The cost function is quadratic in the state and control inputs
+        # The dynamics constraints ensure that the predicted next state matches the actual next state
         for k in range(N):
-            cost += ca.mtimes([(x[:, k] - x_ref).T, Q, (x[:, k] - x_ref)])
-            cost += ca.mtimes([u[:, k].T, R, u[:, k]])
+            current_state = X[:, k]
+            control_input = U[:, k]
+            pos_error = current_state[0:2] - x_ref[0:2]
+            obj += ca.mtimes([pos_error.T, Q[0:2, 0:2], pos_error])
+            obj += ca.mtimes([control_input.T, R, control_input])
+            next_state = X[:, k+1]
+            prediction_next_state = current_state + T * f(current_state, control_input)
+            g.append(next_state - prediction_next_state)
 
-            x_k = x[:, k]
-            u_k = u[:, k]
+        # Now the optimization variables need to be reshaped and concatenated
+        # CasADi requires the optimization variables to be in a specific format
+        # We will reshape X and U to be column vectors and concatenate them
+        # This is necessary for the solver to understand the problem structure
+        # print("X shape: ", X.shape)
+        # print("X shape reshaped: ", (ca.reshape(X, -1, 1)).shape)
+        # print("U shape: ", ca.reshape(U, -1, 1).shape)
+        # print("U shape reshaped: ", (ca.reshape(U, -1, 1)).shape)
+        # print("X and U concatenated for Casadi: ", (ca.vertcat(ca.reshape(X, -1, 1), ca.reshape(U, -1, 1))).shape)
+        OPT_variables = ca.vertcat(ca.reshape(X, -1, 1), ca.reshape(U, -1, 1))
 
-            theta = x_k[2]
-            next_x = x_k[0] + T * u_k[0] * ca.cos(theta)
-            next_y = x_k[1] + T * u_k[0] * ca.sin(theta)
-            next_theta = x_k[2] + T * u_k[1]
+        # Create the NLP problem
+        # The objective function is the cost we defined above
+        # The constraints are the dynamics constraints and the initial condition constraint
+        nlp_prob = {'f': obj, 'x': OPT_variables, 'g': ca.vertcat(*g), 'p': P}# use the * operator to unpack the list of constraints
 
-            g.append(x[:, k+1] - ca.vertcat(next_x, next_y, next_theta))
+        opts = {'ipopt.print_level': 0, 'print_time': 0}
+        solver = ca.nlpsol('solver', 'ipopt', nlp_prob, opts)
 
-            # Obstacle avoidance constraint
-            for p in self.obstacle_points:
-                g.append(ca.norm_2(x[:2, k] - p) - r_safe)
+        # print("NLP constraints (g):", nlp_prob['g'].shape) # To verify the number of constraints
 
-        cost += ca.mtimes([(x[:, N] - x_ref).T, Q, (x[:, N] - x_ref)])
+        # Set bounds for the optimization variables
+        # The bound for the velocity v and angular velocity omega are set to [-1, 1]
+        # The bounds for the states are set to [-inf, inf] for x, y, theta
+        lbx = []
+        ubx = []
+        for _ in range(N+1):
+            lbx += [-ca.inf, -ca.inf, -ca.inf]
+            ubx += [ ca.inf,  ca.inf,  ca.inf]
+        for _ in range(N):
+            lbx += [-1.0, -1.0]
+            ubx += [ 1.0,  1.0]
 
-        vars = ca.vertcat(ca.reshape(x, -1, 1), ca.reshape(u, -1, 1))
-        nlp = {'x': vars, 'f': cost, 'g': ca.vertcat(*g)}
-        opts = {'ipopt.print_level': 0, 'print_time': 0, 'ipopt.tol': 1e-2}
+        # Set the bounds for the inequality constraints, which are the dynamics constraints.
+        # We set them to 0 because we want the predicted next state to match the actual next state
+        # The constraints g should yield 0, so we set the lower and upper bounds to 0
+        lbg = np.zeros((N+1) * n_states)
+        ubg = np.zeros((N+1) * n_states)
 
-        solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
+        # Set the initial state as a parameter for the solver
+        x_target = np.array(x_ref[:2])
+        p = np.concatenate((x0, x_target))
 
-        lbg = [0]*len(g)  # all equality + lower bounds for obstacle constraint
-        ubg = [0]*len(g)
-        for i in range(N):
-            for _ in self.obstacle_points:
-                ubg[i+1] = ca.inf  # allow distance to be larger than r_safe
+        x0_inits = np.tile(x0, (N+1, 1)).T
+        u0_inits = np.zeros((2, N))
+        x_u_guess = np.concatenate((x0_inits.flatten(), u0_inits.flatten()))
 
-        sol = solver(x0=ca.DM.zeros(vars.shape), lbg=lbg, ubg=ubg)
+        # Solve the NLP problem
+        sol = solver(x0=x_u_guess, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p)
 
-        u_opt = ca.reshape(sol['x'][3*(N+1):], 2, N)
-        return u_opt[:, 0].full().flatten()
-
+        # Extract the optimal control inputs from the solution which has the 
+        # format [x0, y0, theta0, ..., xN, yN, thetaN, v0, omega0, ..., vN-1, omegaN-1]
+        start_index = n_states * (N + 1)
+        u_opt = sol['x'][start_index: start_index + 2]
+        self.get_logger().info(f'Optimal objective value: {float(sol["f"]):.4f}')
+        self.get_logger().info(f'v: {float(u_opt[0]):.4f}, omega: {float(u_opt[1]):.4f}')
+        return float(u_opt[0]), float(u_opt[1])
 
 def main(args=None):
     rclpy.init(args=args)
