@@ -13,11 +13,9 @@ class CasadiMPCController(Node):
     def __init__(self):
         super().__init__('casadi_mpc_controller')
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
-        self.pc_sub = self.create_subscription(PointCloud2, '/obstacle_points', self.pc_callback, 10)
-
-        self.obstacle_points = np.empty((0, 2))
-        self.timer = self.create_timer(0.2, self.control_loop)
+        self.odom_sub = self.create_subscription(Odometry, '/model/vehicle_blue/odometry', self.odom_callback, 20)
+        self.pointCloud_sub = self.create_subscription(PointCloud2, '/obstacle_points', self.pointCloud_callback, 10)
+        self.timer = self.create_timer(0.1, self.control_loop)
 
         self.current_state = [0.0, 0.0, 0.0]  # Initial state: [x, y, theta]
 
@@ -38,15 +36,13 @@ class CasadiMPCController(Node):
         theta = np.arctan2(siny_cosp, cosy_cosp)
         self.current_state = [x, y, theta]
 
-    def pc_callback(self, msg):
+    def pointCloud_callback(self, msg):
         points = []
         for p in pc2.read_points(msg, field_names=("x", "y"), skip_nans=True):
             points.append([p[0], p[1]])
         self.obstacle_points = np.array(points)
 
     def control_loop(self):
-        if self.current_state is None:
-            return
 
         x0 = np.array(self.current_state)
         x_ref = np.array(self.waypoints[self.current_wp_idx])
@@ -60,7 +56,8 @@ class CasadiMPCController(Node):
             self.get_logger().info("Goal reached. Stopping.")
             return
 
-        v, omega = self.solve_mpc(x0, [5.0, 5.0, 0.0])
+        self.get_logger().info(f'Current state: {x0}, Target waypoint: {x_ref}')
+        v, omega = self.solve_mpc(x0, x_ref)
 
         msg = Twist()
         msg.linear.x = float(v)
@@ -191,8 +188,17 @@ class CasadiMPCController(Node):
         # format [x0, y0, theta0, ..., xN, yN, thetaN, v0, omega0, ..., vN-1, omegaN-1]
         start_index = n_states * (N + 1)
         u_opt = sol['x'][start_index: start_index + 2]
-        self.get_logger().info(f'Optimal objective value: {float(sol["f"]):.4f}')
-        self.get_logger().info(f'v: {float(u_opt[0]):.4f}, omega: {float(u_opt[1]):.4f}')
+        
+        sol_vals = sol['x'].full().flatten()
+
+        X_opt = sol_vals[:n_states * (N + 1)].reshape((N + 1, n_states))
+        U_opt = sol_vals[n_states * (N + 1):].reshape((N, n_controls))
+
+        for k in range(N):
+            self.get_logger().info(f"Step {k}: v={U_opt[k, 0]:.2f}, omega={U_opt[k, 1]:.2f}")
+
+        #self.get_logger().info(f'Optimal objective value: {float(sol["f"]):.4f}')
+        #self.get_logger().info(f'v: {float(u_opt[0]):.4f}, omega: {float(u_opt[1]):.4f}')
         return float(u_opt[0]), float(u_opt[1])
 
 def main(args=None):
