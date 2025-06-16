@@ -17,9 +17,10 @@ class CasadiMPCController(Node):
         self.pointCloud_sub = self.create_subscription(PointCloud2, '/obstacle_points', self.pointCloud_callback, 10)
         self.timer = self.create_timer(0.1, self.control_loop)
 
+        # Initialize state variable
         self.current_state = [0.0, 0.0, 0.0]  # Initial state: [x, y, theta]
-
-        # Waypoints to follow (simple path)
+        
+        # Waypoints
         self.waypoints = [
             [0.0, 0.0, 0.0],
             [3.0, 2.0, 0.0],
@@ -27,7 +28,13 @@ class CasadiMPCController(Node):
             [5.0, 5.0, 0.0]
         ]
         
+        # Waypoint index
         self.current_wp_idx = 0
+
+        self.goal_reached = False
+        
+        self.distance_to_goal =  np.array(self.current_state[:2]) - np.array(self.waypoints[-1][:2])
+
 
     def odom_callback(self, msg):
         x = msg.pose.pose.position.x
@@ -48,15 +55,26 @@ class CasadiMPCController(Node):
 
         x0 = np.array(self.current_state)
         x_ref = np.array(self.waypoints[self.current_wp_idx])
+        self.distance_to_goal = np.linalg.norm(x0[:2] - x_ref[:2])
 
-        if np.linalg.norm(x0[:2] - x_ref[:2]) < 0.5 and self.current_wp_idx < len(self.waypoints) - 1:
+        if self.distance_to_goal < 0.5 and self.current_wp_idx < len(self.waypoints) - 1:
             self.current_wp_idx += 1
             x_ref = np.array(self.waypoints[self.current_wp_idx])
 
-        if self.current_wp_idx == len(self.waypoints) - 1 and np.linalg.norm(x0[:2] - x_ref[:2]) < 0.3:
-            self.cmd_pub.publish(Twist())
-            self.get_logger().info("Goal reached. Stopping.")
-            return
+        if self.current_wp_idx == len(self.waypoints) - 1:
+            if not self.goal_reached:
+                self.goal_reached = False  # initialize flag
+
+            if self.distance_to_goal < 0.3 and not self.goal_reached:
+                self.goal_reached = True
+                self.cmd_pub.publish(Twist())
+                self.get_logger().info(f'Current state: {x0}, Target waypoint: {x_ref}, Residual error: {self.distance_to_goal}')
+                self.get_logger().info("Goal reached. Stopping.")
+                return
+
+            # prevent re-activating controller if already stopped
+            if self.goal_reached:
+                return
 
         self.get_logger().info(f'Current state: {x0}, Target waypoint: {x_ref}')
         v, omega = self.solve_mpc(x0, x_ref)
