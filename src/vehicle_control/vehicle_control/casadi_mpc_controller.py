@@ -22,7 +22,9 @@ class CasadiMPCController(Node):
         # Waypoints to follow (simple path)
         self.waypoints = [
             [0.0, 0.0, 0.0],
-            [5.0, 2.0, 0.0]
+            [3.0, 2.0, 0.0],
+            [4.0, 3.0, 0.0],
+            [5.0, 5.0, 0.0]
         ]
         
         self.current_wp_idx = 0
@@ -64,7 +66,6 @@ class CasadiMPCController(Node):
         msg.angular.z = float(omega)
         self.cmd_pub.publish(msg)
         self.get_logger().info(f'Sent cmd_vel: v={v:.2f}, omega={omega:.2f}')
-
 
     def solve_mpc(self, x0, x_ref):
         
@@ -110,7 +111,7 @@ class CasadiMPCController(Node):
 
         # Weighting matrices for the cost function
         Q = ca.diag([2.0, 2.0, 1.0])
-        R = ca.diag([0.1, 0.1])
+        R = ca.diag([0.1, 0.4])
 
         # Objective function and constraints
         # The objective is to minimize the distance to the reference trajectory and the control effort
@@ -158,14 +159,14 @@ class CasadiMPCController(Node):
         # Set bounds for the optimization variables
         # The bound for the velocity v and angular velocity omega are set to [-1, 1]
         # The bounds for the states are set to [-inf, inf] for x, y, theta
-        lbx = []
-        ubx = []
-        for _ in range(N+1):
-            lbx += [-ca.inf, -ca.inf, -ca.inf]
-            ubx += [ ca.inf,  ca.inf,  ca.inf]
-        for _ in range(N):
-            lbx += [-1.0, -1.0]
-            ubx += [ 1.0,  1.0]
+        ubx = np.concatenate([
+            np.full(((N+1) * 3,),  np.inf),   # State upper bounds, numpy full fills an array with a given constant value
+            np.tile([ 1.0,  0.5], N)          # Control upper bounds, tile repeats the array (pattern) to match the number of control inputs
+        ])
+        lbx = np.concatenate([
+            np.full(((N+1) * 3,), -np.inf),   # State lower bounds: x, y, theta
+            np.tile([-1.0, -0.5], N)          # Control lower bounds: v, omega
+        ])
 
         # Set the bounds for the inequality constraints, which are the dynamics constraints.
         # We set them to 0 because we want the predicted next state to match the actual next state
@@ -189,16 +190,6 @@ class CasadiMPCController(Node):
         start_index = n_states * (N + 1)
         u_opt = sol['x'][start_index: start_index + 2]
         
-        sol_vals = sol['x'].full().flatten()
-
-        X_opt = sol_vals[:n_states * (N + 1)].reshape((N + 1, n_states))
-        U_opt = sol_vals[n_states * (N + 1):].reshape((N, n_controls))
-
-        for k in range(N):
-            self.get_logger().info(f"Step {k}: v={U_opt[k, 0]:.2f}, omega={U_opt[k, 1]:.2f}")
-
-        #self.get_logger().info(f'Optimal objective value: {float(sol["f"]):.4f}')
-        #self.get_logger().info(f'v: {float(u_opt[0]):.4f}, omega: {float(u_opt[1]):.4f}')
         return float(u_opt[0]), float(u_opt[1])
 
 def main(args=None):
