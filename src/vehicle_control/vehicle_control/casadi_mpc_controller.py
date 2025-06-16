@@ -22,10 +22,7 @@ class CasadiMPCController(Node):
         
         # Waypoints
         self.waypoints = [
-            [0.0, 0.0, 0.0],
-            [3.0, 2.0, 0.0],
-            [4.0, 3.0, 0.0],
-            [5.0, 5.0, 0.0]
+            [8.0, 3.0, 0.0]
         ]
         
         # Waypoint index
@@ -35,6 +32,8 @@ class CasadiMPCController(Node):
         
         self.distance_to_goal =  np.array(self.current_state[:2]) - np.array(self.waypoints[-1][:2])
 
+        # Obstacle points
+        self.obstacle_points = np.array([])
 
     def odom_callback(self, msg):
         x = msg.pose.pose.position.x
@@ -90,6 +89,7 @@ class CasadiMPCController(Node):
         # General MPC setup
         N = 15  # prediction horizon
         T = 0.2  # time step
+        min_safe_distance = 0.5  # minimum allowed distance to any obstacle
 
         # System variables
         x = ca.MX.sym('x')
@@ -145,6 +145,13 @@ class CasadiMPCController(Node):
         # The dynamics constraints ensure that the predicted next state matches the actual next state
         for k in range(N):
             current_state = X[:, k]
+
+            # Obstacle avoidance constraints
+            for obs in self.obstacle_points:
+                obs_pos = ca.DM(obs)
+                dist = ca.norm_2(current_state[0:2] - obs_pos)
+                g.append(dist - min_safe_distance)  # This must be ≥ 0
+
             control_input = U[:, k]
             pos_error = current_state[0:2] - x_ref[0:2]
             obj += ca.mtimes([pos_error.T, Q[0:2, 0:2], pos_error])
@@ -191,6 +198,12 @@ class CasadiMPCController(Node):
         # The constraints g should yield 0, so we set the lower and upper bounds to 0
         lbg = np.zeros((N+1) * n_states)
         ubg = np.zeros((N+1) * n_states)
+
+        # Additional constraints from obstacle avoidance (all must be >= 0)
+        num_obs_constraints = N * len(self.obstacle_points)
+        if num_obs_constraints > 0:
+            lbg = np.concatenate([lbg, np.full((num_obs_constraints,), 0.0)])
+            ubg = np.concatenate([ubg, np.full((num_obs_constraints,), np.inf)])
 
         # Set the initial state as a parameter for the solver
         x_target = np.array(x_ref[:2])
