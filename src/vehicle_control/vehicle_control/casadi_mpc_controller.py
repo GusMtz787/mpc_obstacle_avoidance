@@ -3,8 +3,11 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
+from nav_msgs.msg import Path
+from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import PointCloud2
 import sensor_msgs_py.point_cloud2 as pc2
+from visualization_msgs.msg import Marker
 
 import numpy as np
 import casadi as ca
@@ -13,6 +16,8 @@ class CasadiMPCController(Node):
     def __init__(self):
         super().__init__('casadi_mpc_controller')
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.path_pub = self.create_publisher(Path, '/mpc_predicted_path', 10)
+        self.marker_pub = self.create_publisher(Marker, '/visualization_marker', 10)
         self.odom_sub = self.create_subscription(Odometry, '/model/vehicle_blue/odometry', self.odom_callback, 20)
         self.pointCloud_sub = self.create_subscription(PointCloud2, '/obstacle_points', self.pointCloud_callback, 10)
         self.timer = self.create_timer(0.1, self.control_loop)
@@ -22,7 +27,7 @@ class CasadiMPCController(Node):
         
         # Waypoints
         self.waypoints = [
-            [8.0, 3.0, 0.0]
+            [9.0, 0.0, 0.0]
         ]
         
         # Waypoint index
@@ -34,6 +39,9 @@ class CasadiMPCController(Node):
 
         # Obstacle points
         self.obstacle_points = np.array([])
+
+        # Enable obstacle avoidance
+        self.isEnable_obstacle_avoidance = True 
 
     def odom_callback(self, msg):
         x = msg.pose.pose.position.x
@@ -51,6 +59,9 @@ class CasadiMPCController(Node):
         self.obstacle_points = np.array(points)
 
     def control_loop(self):
+
+        if self.current_state is None:
+            return
 
         x0 = np.array(self.current_state)
         x_ref = np.array(self.waypoints[self.current_wp_idx])
@@ -75,21 +86,79 @@ class CasadiMPCController(Node):
             if self.goal_reached:
                 return
 
-        self.get_logger().info(f'Current state: {x0}, Target waypoint: {x_ref}')
-        v, omega = self.solve_mpc(x0, x_ref)
+        v, omega, predicted_states, stats = self.solve_mpc(x0, x_ref)
+
+        status = stats['success']
+        iterations = stats['iter_count']
 
         msg = Twist()
         msg.linear.x = float(v)
         msg.angular.z = float(omega)
         self.cmd_pub.publish(msg)
-        self.get_logger().info(f'Sent cmd_vel: v={v:.2f}, omega={omega:.2f}')
+        self.get_logger().info(f'Current state: {x0}, Target waypoint: {x_ref}, solver success: {status}, iterations: {iterations},sent cmd_vel: v={v:.2f}, omega={omega:.2f}')
+
+        if hasattr(self, 'obstacle_points') and len(self.obstacle_points) > 0:
+            closest_obs = min(self.obstacle_points, key=lambda pt: np.linalg.norm(x0[:2] - pt))
+            
+            marker = Marker()
+            marker.header.frame_id = "vehicle_blue/chassis/gpu_lidar"
+            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.ns = "closest_obstacle"
+            marker.id = 0
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
+            marker.pose.position.x = float(closest_obs[0])
+            marker.pose.position.y = float(closest_obs[1])
+            marker.pose.position.z = 0.1
+            marker.scale.x = 0.2
+            marker.scale.y = 0.2
+            marker.scale.z = 0.2
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
+            self.marker_pub.publish(marker)
+
+        car_marker = Marker()
+        car_marker.header.frame_id = "vehicle_blue/chassis/gpu_lidar"
+        car_marker.header.stamp = self.get_clock().now().to_msg()
+        car_marker.ns = "car_position"
+        car_marker.id = 1
+        car_marker.type = Marker.CUBE
+        car_marker.action = Marker.ADD
+        car_marker.pose.position.x = x0[0]
+        car_marker.pose.position.y = x0[1]
+        car_marker.pose.position.z = 0.1
+        car_marker.scale.x = 0.3
+        car_marker.scale.y = 0.2
+        car_marker.scale.z = 0.2
+        car_marker.color.r = 0.0
+        car_marker.color.g = 0.0
+        car_marker.color.b = 1.0
+        car_marker.color.a = 1.0
+        self.marker_pub.publish(car_marker)
+
+        path_msg = Path()
+        path_msg.header.stamp = self.get_clock().now().to_msg()
+        path_msg.header.frame_id = "vehicle_blue/chassis/gpu_lidar"
+
+        for state in predicted_states:
+            pose = PoseStamped()
+            pose.header = path_msg.header
+            pose.pose.position.x = state[0]
+            pose.pose.position.y = state[1]
+            pose.pose.position.z = 0.0
+            pose.pose.orientation.w = 1.0
+            path_msg.poses.append(pose)
+
+        self.path_pub.publish(path_msg)
 
     def solve_mpc(self, x0, x_ref):
         
         # General MPC setup
         N = 15  # prediction horizon
         T = 0.2  # time step
-        min_safe_distance = 0.5  # minimum allowed distance to any obstacle
+        min_safe_distance = 0.25  # minimum allowed distance to any obstacle
 
         # System variables
         x = ca.MX.sym('x')
@@ -138,6 +207,13 @@ class CasadiMPCController(Node):
         g = []
         g.append(X[:, 0] - P[0:3])# initial condition constraint this tells that X[0] = P, where P is the initial state (x0). Bear in mind that g must then yield 0.
 
+        if self.isEnable_obstacle_avoidance:
+            if hasattr(self, 'obstacle_points') and len(self.obstacle_points) > 0:
+                closest_obs = min(self.obstacle_points, key=lambda pt: np.linalg.norm(x0[:2] - pt))
+                closest_obs_ca = ca.DM(closest_obs) # ca.DM defines a dense matrix in CasADi format
+            else:
+                closest_obs_ca = None
+
         # This is the core of the MPC loop
         # We iterate over the prediction horizon N
         # For each step, we compute the cost and the dynamics constraints
@@ -146,11 +222,10 @@ class CasadiMPCController(Node):
         for k in range(N):
             current_state = X[:, k]
 
-            # Obstacle avoidance constraints
-            for obs in self.obstacle_points:
-                obs_pos = ca.DM(obs)
-                dist = ca.norm_2(current_state[0:2] - obs_pos)
-                g.append(dist - min_safe_distance)  # This must be ≥ 0
+            if self.isEnable_obstacle_avoidance and closest_obs_ca is not None:
+                dist = ca.norm_2(current_state[0:2] - closest_obs_ca)
+                penalty = ca.fmax(0, min_safe_distance - dist)
+                g.append(dist - min_safe_distance)
 
             control_input = U[:, k]
             pos_error = current_state[0:2] - x_ref[0:2]
@@ -184,26 +259,27 @@ class CasadiMPCController(Node):
         # Set bounds for the optimization variables
         # The bound for the velocity v and angular velocity omega are set to [-1, 1]
         # The bounds for the states are set to [-inf, inf] for x, y, theta
-        ubx = np.concatenate([
-            np.full(((N+1) * 3,),  np.inf),   # State upper bounds, numpy full fills an array with a given constant value
-            np.tile([ 1.0,  0.5], N)          # Control upper bounds, tile repeats the array (pattern) to match the number of control inputs
-        ])
-        lbx = np.concatenate([
+        lower_bound_state_control = np.concatenate([
             np.full(((N+1) * 3,), -np.inf),   # State lower bounds: x, y, theta
             np.tile([-1.0, -0.5], N)          # Control lower bounds: v, omega
+        ])
+        upper_bound_state_control = np.concatenate([
+            np.full(((N+1) * 3,),  np.inf),   # State upper bounds, numpy full fills an array with a given constant value
+            np.tile([ 1.0,  0.5], N)          # Control upper bounds, tile repeats the array (pattern) to match the number of control inputs
         ])
 
         # Set the bounds for the inequality constraints, which are the dynamics constraints.
         # We set them to 0 because we want the predicted next state to match the actual next state
         # The constraints g should yield 0, so we set the lower and upper bounds to 0
-        lbg = np.zeros((N+1) * n_states)
-        ubg = np.zeros((N+1) * n_states)
+        lower_bound_constraint = np.zeros((N+1) * n_states)
+        upper_bound_constraint = np.zeros((N+1) * n_states)
 
-        # Additional constraints from obstacle avoidance (all must be >= 0)
-        num_obs_constraints = N * len(self.obstacle_points)
-        if num_obs_constraints > 0:
-            lbg = np.concatenate([lbg, np.full((num_obs_constraints,), 0.0)])
-            ubg = np.concatenate([ubg, np.full((num_obs_constraints,), np.inf)])
+        # Add the upper and lower bounds for the obstacle avoidance constraints:
+        # if we do have an obstacle, we need the upper and lower bounds for all
+        # the control horizon N. Else, we don't have any constraints.
+        if self.isEnable_obstacle_avoidance and closest_obs_ca is not None:
+            lower_bound_constraint = np.concatenate([lower_bound_constraint, np.full((N,), 0.0)])
+            upper_bound_constraint = np.concatenate([upper_bound_constraint, np.full((N,), np.inf)])
 
         # Set the initial state as a parameter for the solver
         x_target = np.array(x_ref[:2])
@@ -211,17 +287,25 @@ class CasadiMPCController(Node):
 
         x0_inits = np.tile(x0, (N+1, 1)).T
         u0_inits = np.zeros((2, N))
-        x_u_guess = np.concatenate((x0_inits.flatten(), u0_inits.flatten()))
+        x_u_inits = np.concatenate((x0_inits.flatten(), u0_inits.flatten()))
+
+        # Verify number of constraints
+        self.get_logger().info(f"Constraints g: {ca.vertcat(*g).shape}")
+        self.get_logger().info(f"lbg: {lower_bound_constraint.shape}, ubg: {upper_bound_constraint.shape}")
 
         # Solve the NLP problem
-        sol = solver(x0=x_u_guess, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p)
+        sol = solver(x0=x_u_inits, lbx=lower_bound_state_control, ubx=upper_bound_state_control, lbg=lower_bound_constraint, ubg=upper_bound_constraint, p=p)
 
         # Extract the optimal control inputs from the solution which has the 
         # format [x0, y0, theta0, ..., xN, yN, thetaN, v0, omega0, ..., vN-1, omegaN-1]
         start_index = n_states * (N + 1)
         u_opt = sol['x'][start_index: start_index + 2]
         
-        return float(u_opt[0]), float(u_opt[1])
+        # Extract predicted trajectory
+        predicted_states = sol['x'][:n_states * (N+1)]
+        predicted_states = np.array(predicted_states.full()).reshape((N+1, n_states))
+
+        return float(u_opt[0]), float(u_opt[1]), predicted_states, solver.stats()
 
 def main(args=None):
     rclpy.init(args=args)
