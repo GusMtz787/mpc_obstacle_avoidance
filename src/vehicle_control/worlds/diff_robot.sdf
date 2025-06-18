@@ -76,7 +76,7 @@
         <!--General parameters of the vehicle, in this case, a differential car with a castor wheel-->
         <!--First the center of the body-->
         <model name='vehicle_blue' canonical_link='chassis'>
-            <pose relative_to='world'>-7 0 0 0 0 0</pose>
+            <pose relative_to='world'>-10 0 0 0 0 0</pose>
             
             <!--The lidar is defined as a frame, it is attached to the chassis, and it has a pose relative to the chassis-->
             <frame name="lidar_frame" attached_to='chassis'>

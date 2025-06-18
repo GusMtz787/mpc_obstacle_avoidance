@@ -15,11 +15,25 @@ import casadi as ca
 class CasadiMPCController(Node):
     def __init__(self):
         super().__init__('casadi_mpc_controller')
+        
+        # Create parameters for path and obstacle weights (only if not set in YAML file)
+        self.declare_parameter("path_weight", 1.0)
+        self.declare_parameter("obstacle_weight", 0.5)
+
+        # Retrieve the actual values (from YAML)
+        self.path_weight = self.get_parameter("path_weight").value
+        self.obstacle_weight = self.get_parameter("obstacle_weight").value
+
+        self.get_logger().info(f"Using path_weight={self.path_weight}, obstacle_weight={self.obstacle_weight}")
+        
+        # Create publishers and subscribers
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.path_pub = self.create_publisher(Path, '/mpc_predicted_path', 10)
         self.marker_pub = self.create_publisher(Marker, '/visualization_marker', 10)
         self.odom_sub = self.create_subscription(Odometry, '/model/vehicle_blue/odometry', self.odom_callback, 20)
         self.pointCloud_sub = self.create_subscription(PointCloud2, '/obstacle_points', self.pointCloud_callback, 10)
+        
+        # Create a timer to call the control loop at a fixed rate
         self.timer = self.create_timer(0.1, self.control_loop)
 
         # Initialize state variable
@@ -205,7 +219,7 @@ class CasadiMPCController(Node):
 
             # stage cost -------------------------------------
             pos_err = current_state[0:2] - x_ref[0:2]
-            obj += ca.mtimes([pos_err.T, Q[0:2, 0:2], pos_err])
+            obj += self.path_weight * ca.mtimes([pos_err.T, Q[0:2, 0:2], pos_err]) # only penalize position error, not orientation (for now)
             obj += ca.mtimes([control_input.T, R, control_input])
 
             # dynamics constraint -----------------------------

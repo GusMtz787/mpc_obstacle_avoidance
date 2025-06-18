@@ -18,6 +18,7 @@ setup(
         ('share/vehicle_control/launch', ['launch/vehicle_sim.launch.py']),        
         ('share/vehicle_control/launch', ['launch/mpc_controller.launch.py']),        
         ('share/vehicle_control/launch', ['launch/casadi_mpc_controller.launch.py']),
+        ('share/vehicle_control/config', ['config/casadi_mpc_params.yaml']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
