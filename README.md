@@ -136,13 +136,14 @@ $$
 
 Where:
 
-- \( x_k = [x_k, y_k]^T \)
-- \( u_k = [v_k, \omega_k]^T \)
-- \( Q_p = \text{diag}(2.0, 2.0) \)
-- \( R = \text{diag}(0.1, 0.4) \)
-- \( v_{\min} = -1.0,\; v_{\max} = 1.0 \)
-- \( \omega_{\min} = -0.5,\; \omega_{\max} = 0.5 \)
-- \( p_{\text{obs}} \): closest detected obstacle
-- \( r_{\text{safe}} = 0.5 \): safety margin
+- $x_k = [x_k, y_k]^T$
+- $u_k = [v_k, \omega_k]^T$
+- $Q_p = \text{diag}(2.0, 2.0)$
+- $R = \text{diag}(0.1, 0.4)$
+- $v_{\min} = -1.0,\; v_{\max} = 1.0$
+- $\omega_{\min} = -0.5,\; \omega_{\max} = 0.5$
+- $(x_{obs}, y_{obs})$: coordinates of closest detected obstacle
+- $r_{\text{safe}} = 0.5$: safety margin
 
-Obstacle avoidance is enforced using a **distance-squared constraint** to the closest detected point from a LiDAR-derived point cloud.
+> NOTE: Obstacle avoidance is enforced using a **distance-squared constraint** to the closest detected point from a LiDAR-derived point cloud. This law has been successfully tested in:
+[MPC-Based Obstacle Avoidance Path Tracking Control for Distributed Drive Electric Vehicles](https://doi.org/10.3390/wevj13120221), *Wu, H., Zhang, H., and Feng, Y.*, *World Electric Vehicle Journal, 2022*.
