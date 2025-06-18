@@ -82,9 +82,10 @@ Where:
 - $v(t)$: linear velocity input
 - $\omega(t)$: angular velocity input
 
-Because the system is discretized, a forward Euler integration is preferred.
+Because the system is discretized, a forward Euler integration was selected to program the dynamics of the system.
 
-$$\begin{aligned}
+$$
+\begin{aligned}
 x_{k+1} &= x_k + T \cdot v_k \cdot \cos(\theta_k) \\
 y_{k+1} &= y_k + T \cdot v_k \cdot \sin(\theta_k) \\
 \theta_{k+1} &= \theta_k + T \cdot \omega_k
@@ -101,7 +102,7 @@ Where:
 
 At each timestep, the MPC solves the following optimization problem:
 
-\[
+$$
 \begin{aligned}
 \min_{\{v_k, \omega_k\}_{k=0}^{N-1}} \quad & \sum_{k=0}^{N-1} \left[
 (x_k - x_{\text{ref}})^T Q_p (x_k - x_{\text{ref}}) + 
@@ -114,7 +115,7 @@ u_k^T R u_k
 & \omega_{\min} \leq \omega_k \leq \omega_{\max} \\
 & \|[x_k, y_k]^T - p_{\text{obs}}\|_2^2 \geq r_{\text{safe}}^2 \quad \text{(if obs. avoidance enabled)}
 \end{aligned}
-\]
+$$
 
 Where:
 - \( x_k = [x_k, y_k]^T \)
