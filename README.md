@@ -16,6 +16,7 @@ This ROS 2 project implements a **Model Predictive Control (MPC)** based navigat
 
 ## Repository Structure
 
+```bash
 vehicle_control/
 ├── launch/
 │ ├── bridge.launch.py # Gazebo <-> ROS 2 bridge
@@ -31,3 +32,26 @@ vehicle_control/
 ├── casadi_mpc_controller.py # CasADi-based MPC with obstacle avoidance
 ├── vehicle_controller.py # Simple velocity command publisher
 └── lidar_listener.py # LiDAR to PointCloud2 processing
+```
+
+---
+
+## Start
+
+### Prerequisites
+
+- ROS 2 Humble
+- Gazebo Fortress or compatible
+- Python 3.10+
+- Dependencies:
+
+```bash
+pip install casadi cvxpy numpy
+```
+
+### Build the ros2 workspace
+```bash
+cd ros2_workspace
+colcon build
+source install/setup.bash
+```
