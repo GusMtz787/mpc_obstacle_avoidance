@@ -37,7 +37,7 @@ class CasadiMPCController(Node):
         self.timer = self.create_timer(0.1, self.control_loop)
 
         # Initialize state variable
-        self.current_state = [0.0, 0.0, 0.0]  # Initial state: [x, y, theta]
+        self.current_state = [-11.0, 0.0, 0.0]  # Initial state: [x, y, theta]
         
         # Waypoints
         self.waypoints = [
@@ -197,14 +197,14 @@ class CasadiMPCController(Node):
 
         obj = 0
         g_sym = []          # symbolic constraints
-        lbg = []            # numeric lower bounds
-        ubg = []            # numeric upper bounds
+        lower_bound_constraint = []            # numeric lower bounds
+        upper_bound_constraint = []            # numeric upper bounds
 
         # --------------- initial condition --------------------
         g_ic = X[:, 0] - P[0:3]
         g_sym.append(g_ic)
-        lbg.extend([0.0, 0.0, 0.0])
-        ubg.extend([0.0, 0.0, 0.0])
+        lower_bound_constraint.extend([0.0, 0.0, 0.0])
+        upper_bound_constraint.extend([0.0, 0.0, 0.0])
 
         # pick the obstacle once per solve ---------------------
         closest_obs_ca = None
@@ -225,36 +225,40 @@ class CasadiMPCController(Node):
             # dynamics constraint -----------------------------
             g_dyn = X[:, k + 1] - (current_state + T * f(current_state, control_input))
             g_sym.append(g_dyn)
-            lbg.extend([0.0, 0.0, 0.0])
-            ubg.extend([0.0, 0.0, 0.0])
+            lower_bound_constraint.extend([0.0, 0.0, 0.0])
+            upper_bound_constraint.extend([0.0, 0.0, 0.0])
 
             # obstacle constraint -----------------------------
             if closest_obs_ca is not None:
                 dist2 = ca.sumsqr(current_state[0:2] - closest_obs_ca)
-                g_obs = dist2 - r_safe ** 2  # >= 0 keeps us outside
+                g_obs = self.obstacle_weight * (dist2 - r_safe ** 2)  # >= 0 this will ensure that the distance to the obstacle is at least r_safe
                 g_sym.append(g_obs)
-                lbg.append(0.0)
-                ubg.append(np.inf)
+                lower_bound_constraint.append(0.0)
+                upper_bound_constraint.append(np.inf)
 
         # --------------- assemble NLP -------------------------
         OPT_variables = ca.vertcat(ca.reshape(X, -1, 1), ca.reshape(U, -1, 1))
         G = ca.vertcat(*g_sym)
-        lbg = np.array(lbg, dtype=float)
-        ubg = np.array(ubg, dtype=float)
+        lower_bound_constraint = np.array(lower_bound_constraint, dtype=float)
+        upper_bound_constraint = np.array(upper_bound_constraint, dtype=float)
 
         nlp_prob = {'f': obj, 'x': OPT_variables, 'g': G, 'p': P}
         solver = ca.nlpsol('solver', 'ipopt', nlp_prob,
                            {'ipopt.print_level': 0, 'print_time': 0})
 
         # --------------- variable bounds ----------------------
-        lbx = np.concatenate([
+        lower_bound_state = np.concatenate([
             np.full(((N + 1) * 3,), -np.inf),  # states
             np.tile([-1.0, -0.5], N)           # controls
         ])
-        ubx = np.concatenate([
+        upper_bound_state = np.concatenate([
             np.full(((N + 1) * 3,), np.inf),   # states
             np.tile([1.0, 0.5], N)             # controls
         ])
+
+        # Verify number of constraints
+        self.get_logger().info(f"Constraints g: {G.shape}")
+        self.get_logger().info(f"lbg: {lower_bound_constraint.shape}, ubg: {upper_bound_constraint.shape}")
 
         # --------------- initial guess & parameters ----------
         p = np.concatenate((x0, x_ref[:2]))
@@ -263,7 +267,7 @@ class CasadiMPCController(Node):
         x_u_guess = np.concatenate((x0_guess.flatten(), u0_guess.flatten()))
 
         # --------------- solve -------------------------------
-        sol = solver(x0=x_u_guess, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p)
+        sol = solver(x0=x_u_guess, lbx=lower_bound_state, ubx=upper_bound_state, lbg=lower_bound_constraint, ubg=upper_bound_constraint, p=p)
 
         # --------------- extract -----------------------------
         start_index = n_states * (N + 1)

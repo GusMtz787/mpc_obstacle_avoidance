@@ -163,4 +163,4 @@ Where:
 | **Configurable Cost Weights**                  | Done   | `path_weight` and `obstacle_weight` via YAML parameters    |
 | **Parameter YAML Support**                     | Done   | Uses `casadi_mpc_params.yaml` loaded at runtime            |
 | **Visualization**                              | Done   | Publishes `Path` and `Marker` topics for RViz/Gazebo       |
-| **Obstacle Avoidance**                         | ⚠️     | Currently uses only the closest obstacle                   |
+| **Obstacle Avoidance**                         | Pending| Currently the problem becomes infeasible                   |
