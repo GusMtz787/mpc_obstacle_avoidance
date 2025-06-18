@@ -101,13 +101,15 @@ Where:
 ### Optimization Problem
 
 At each timestep, the MPC solves the following optimization problem:
-\min_{\{v_k, \omega_k\}_{k=0}^{N-1}} \quad 
 
 $$
-\sum_{k=0}^{N-1} \left[(x_k - x_{\text{ref}})^T Q_p (x_k - x_{\text{ref}}) + u_k^T R u_k \right]
+\min_{v_k, \omega_k} = J
 $$
 
+By minimizing the cost function $J$, we can calculate the optimal values for $v$ and $w$. And the cost function is given by:
+
 $$
+J = \sum_{k=0}^{N-1} \left[(x_k - x_{\text{ref}})^T Q_p (x_k - x_{\text{ref}}) + u_k^T R u_k \right] \\
 \begin{aligned}
 \text{subject to:} \quad & \\
 & x_0 = x_{\text{init}} \\
