@@ -112,9 +112,10 @@ $$
 J = \sum_{k=0}^{N-1} \left[(x_k - x_{\text{ref}})^T Q_p (x_k - x_{\text{ref}}) + u_k^T R u_k \right]
 $$
 
+subject to:
+
 $$
 \begin{aligned}
-\text{subject to:}\\
 & x_0 = x_{\text{init}} \\
 & x_{k+1} = x_k + T \cdot f(x_k, u_k) \quad \forall k = 0,\dots,N-1 \\
 & v_{\min} \leq v_k \leq v_{\max} \\
@@ -122,6 +123,7 @@ $$
 & \|[x_k, y_k]^T - p_{\text{obs}}\|_2^2 \geq r_{\text{safe}}^2 \quad \text{(if obs. avoidance enabled)}
 \end{aligned}
 $$
+
 Where:
 - \( x_k = [x_k, y_k]^T \)
 - \( u_k = [v_k, \omega_k]^T \)
