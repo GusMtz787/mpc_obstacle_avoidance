@@ -115,16 +115,27 @@ $$
 subject to:
 
 $$
-\begin{aligned}
-& x_0 = x_{\text{init}} \\
-& x_{k+1} = x_k + T \cdot f(x_k, u_k) \quad \forall k = 0,\dots,N-1 \\
-& v_{\min} \leq v_k \leq v_{\max} \\
-& \omega_{\min} \leq \omega_k \leq \omega_{\max} \\
-& \|[x_k, y_k]^T - p_{\text{obs}}\|_2^2 \geq r_{\text{safe}}^2 \quad \text{(if obs. avoidance enabled)}
-\end{aligned}
+x_0 = x_{\text{init}}
+$$
+
+$$
+x_{k+1} = x_k + T \cdot f(x_k, u_k) \quad \forall k = 0,\dots,N-1
+$$
+
+$$
+v_{\min} \leq v_k \leq v_{\max}
+$$
+
+$$
+\omega_{\min} \leq \omega_k \leq \omega_{\max}
+$$
+
+$$
+(x_k - x_{obs})^2 + (y_k - y_{obs})^2\geq r_{\text{safe}}^2
 $$
 
 Where:
+
 - \( x_k = [x_k, y_k]^T \)
 - \( u_k = [v_k, \omega_k]^T \)
 - \( Q_p = \text{diag}(2.0, 2.0) \)
