@@ -101,9 +101,10 @@ Where:
 ### Optimization Problem
 
 At each timestep, the MPC solves the following optimization problem:
+\min_{\{v_k, \omega_k\}_{k=0}^{N-1}} \quad 
 
 $$
-\min_{\{v_k, \omega_k\}_{k=0}^{N-1}} \quad \sum_{k=0}^{N-1} \left[(x_k - x_{\text{ref}})^T Q_p (x_k - x_{\text{ref}}) + u_k^T R u_k \right]
+\sum_{k=0}^{N-1} \left[(x_k - x_{\text{ref}})^T Q_p (x_k - x_{\text{ref}}) + u_k^T R u_k \right]
 $$
 
 $$
