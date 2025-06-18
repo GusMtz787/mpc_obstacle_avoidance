@@ -1,4 +1,3 @@
-# casadi_mpc_controller.py
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
@@ -170,8 +169,8 @@ class CasadiMPCController(Node):
     def solve_mpc(self, x0, x_ref):
         # --------------- problem parameters ----------------
         N = 15         # horizon length
-        T = 0.2        # sampling time [s]
-        r_safe = 0.5   # safety radius around obstacle
+        T = 0.1        # sampling time [s]
+        r_safe = 2   # safety radius around obstacle
 
         # --------------- symbolic variables ---------------
         x, y, theta = ca.MX.sym('x'), ca.MX.sym('y'), ca.MX.sym('theta')

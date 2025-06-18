@@ -59,6 +59,22 @@ colcon build
 source install/setup.bash
 ```
 
+### Run the project
+
+```bash
+# In console 1 run: 
+ros2 launch vehicle_control bridge.launch.py 
+
+# In console 2 run:
+ros2 launch vehicle_control lidar_listener.launch.py
+
+# In console 3 run:
+ros2 launch vehicle_control world.launch.py
+
+# In the last console run:
+ros2 launch vehicle_control casadi_mpc_controller.launch.py
+```
+
 ---
 
 ## Mathematical Formulation
@@ -145,7 +161,7 @@ Where:
 - $v_{\min} = -1.0,\; v_{\max} = 1.0$
 - $\omega_{\min} = -0.5,\; \omega_{\max} = 0.5$
 - $(x_{obs}, y_{obs})$: coordinates of closest detected obstacle
-- $r_{\text{safe}} = 0.5$: safety margin
+- $r_{\text{safe}} = 2.0$ meters (safety margin)
 
 > NOTE: Obstacle avoidance is enforced using a **distance-squared constraint** to the closest detected point from a LiDAR-derived point cloud. This law has been successfully tested in:
 [MPC-Based Obstacle Avoidance Path Tracking Control for Distributed Drive Electric Vehicles](https://doi.org/10.3390/wevj13120221), *Wu, H., Zhang, H., and Feng, Y.*, *World Electric Vehicle Journal, 2022*.
@@ -163,4 +179,10 @@ Where:
 | **Configurable Cost Weights**                  | Done   | `path_weight` and `obstacle_weight` via YAML parameters    |
 | **Parameter YAML Support**                     | Done   | Uses `casadi_mpc_params.yaml` loaded at runtime            |
 | **Visualization**                              | Done   | Publishes `Path` and `Marker` topics for RViz/Gazebo       |
-| **Obstacle Avoidance**                         | Pending| Currently the problem becomes infeasible                   |
+| **Obstacle Avoidance**                         | Pending| Currently the odometry drifts over time                    |
+
+## Known Issues:
+
+The only identified issue with the current set-up, is the plugin used for this car. As it can be seen from the .sdf set-up, the odometry is being pulled from the wheels. That means, for direct routes, the controller works without flaws because the odometry drift is minimal, if any. However, when considering obstacles, the corrections will make the odometry drift gradually. This is seen specially if one visualizes the `visualization_marker` topic in rviz2, the position of the car begins to drift when compared to the actual position. This behavior hinders the obstacle avoidance problem for the moment.
+
+**Hypothesis:** feeding the pose of the car directly from Gazebo, instead of the wheels (discarding some of the reality of the problem by considering the odometry directly from the wheels), may allow the MPC drive the car to the desired position with obstacle avoidance.
