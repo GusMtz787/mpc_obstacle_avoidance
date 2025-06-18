@@ -18,6 +18,8 @@ This ROS 2 project implements a **Model Predictive Control (MPC)** based navigat
 
 ```bash
 vehicle_control/
+├── config/
+│ ├── casadi_mpc_params.yaml # configurable parameters
 ├── launch/
 │ ├── bridge.launch.py # Gazebo <-> ROS 2 bridge
 │ ├── casadi_mpc_controller.launch.py # Casadi MPC implementation
@@ -59,7 +61,7 @@ source install/setup.bash
 
 ---
 
-## Mathematical Formulation (MPC)
+## Mathematical Formulation
 
 The control problem in the `casadi_mpc_controller.py` file uses a discrete-time nonlinear Model Predictive Control (MPC) scheme to compute optimal velocity $u = [v \quad \omega]$ commands for a differential-drive robot over a prediction horizon \( N \), with obstacle avoidance.
 
@@ -147,3 +149,18 @@ Where:
 
 > NOTE: Obstacle avoidance is enforced using a **distance-squared constraint** to the closest detected point from a LiDAR-derived point cloud. This law has been successfully tested in:
 [MPC-Based Obstacle Avoidance Path Tracking Control for Distributed Drive Electric Vehicles](https://doi.org/10.3390/wevj13120221), *Wu, H., Zhang, H., and Feng, Y.*, *World Electric Vehicle Journal, 2022*.
+
+## Checklist: MPC Obstacle Avoidance
+
+| Feature / Requirement                          | Status | Notes                                                      |
+|------------------------------------------------|--------|------------------------------------------------------------|
+| **ROS 2 Humble Compatibility**                 | Done   | Uses `rclpy`, ROS 2 launch files, and parameters           |
+| **Gazebo Sim Integration**                     | Done   | Differential-drive robot with LiDAR in simulated world     |
+| **Model Predictive Control (CVXPY)**           | Done   | Implemented in `mpc_controller.py` using CVXPY             |
+| **Nonlinear Model Predictive Control (CasADi)**| Done   | Implemented in `casadi_mpc_controller.py` using CasADi     |
+| **Path Following**                             | Done   | Robot tracks waypoints using MPC-based control             |
+| **LiDAR Integration**                          | Done   | Converts `LaserScan` to `PointCloud2` for MPC              |
+| **Configurable Cost Weights**                  | Done   | `path_weight` and `obstacle_weight` via YAML parameters    |
+| **Parameter YAML Support**                     | Done   | Uses `casadi_mpc_params.yaml` loaded at runtime            |
+| **Visualization**                              | Done   | Publishes `Path` and `Marker` topics for RViz/Gazebo       |
+| **Obstacle Avoidance**                         | ⚠️     | Currently uses only the closest obstacle                   |
