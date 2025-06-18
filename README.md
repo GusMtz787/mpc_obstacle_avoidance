@@ -109,9 +109,12 @@ $$
 By minimizing the cost function $J$, we can calculate the optimal values for $v$ and $w$. And the cost function is given by:
 
 $$
-J = \sum_{k=0}^{N-1} \left[(x_k - x_{\text{ref}})^T Q_p (x_k - x_{\text{ref}}) + u_k^T R u_k \right] \\
+J = \sum_{k=0}^{N-1} \left[(x_k - x_{\text{ref}})^T Q_p (x_k - x_{\text{ref}}) + u_k^T R u_k \right]
+$$
+
+$$
 \begin{aligned}
-\text{subject to:} \quad & \\
+\text{subject to:}\\
 & x_0 = x_{\text{init}} \\
 & x_{k+1} = x_k + T \cdot f(x_k, u_k) \quad \forall k = 0,\dots,N-1 \\
 & v_{\min} \leq v_k \leq v_{\max} \\
