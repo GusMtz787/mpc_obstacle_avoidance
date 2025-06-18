@@ -15,3 +15,19 @@ This ROS 2 project implements a **Model Predictive Control (MPC)** based navigat
 ---
 
 ## Repository Structure
+
+vehicle_control/
+├── launch/
+│ ├── bridge.launch.py # Gazebo <-> ROS 2 bridge
+│ ├── casadi_mpc_controller.launch.py # Casadi MPC implementation
+│ ├── controller.launch.py # Basic motion controller
+│ ├── lidar_listener.launch.py
+│ ├── mpc_controller.launch.py # CVXPY MPC implementation
+│ ├── vehicle_sim.launch.py # Launches full sim stack (with cvxpy)
+│ └── world.launch.py # Launches Gazebo world
+├── worlds/
+│ └── diff_robot.sdf # Robot and environment description
+├── mpc_controller.py # cvxpy-based MPC controller
+├── casadi_mpc_controller.py # CasADi-based MPC with obstacle avoidance
+├── vehicle_controller.py # Simple velocity command publisher
+└── lidar_listener.py # LiDAR to PointCloud2 processing
